@@ -27,18 +27,14 @@
 /**
  * Created by dat on 4/18/17.
  */
-var encode = (function (encode) {
+var igv = (function (igv) {
 
-    /**
-     * @param config      dataSource configuration
-     * @param tableFormat table formatting object (see for example EncodeTableFormat)
-     */
-    encode.EncodeDataSource = function (config, tableFormat) {
+    igv.EncodeDataSource = function (config, columnFormat) {
         this.config = config;
-        this.tableFormat = tableFormat;
+        this.columnFormat = columnFormat;
     };
 
-    encode.EncodeDataSource.prototype.retrieveData = function (continuation) {
+    igv.EncodeDataSource.prototype.retrieveData = function (continuation) {
 
         var self = this,
             fileFormat,
@@ -65,15 +61,14 @@ var encode = (function (encode) {
             "field=files.assembly&" +
             "limit=all";
 
+        // TODO - Test Error Handling with this URL.
+        // query = "https://www.encodeproject.org/search/?type=experiment&assembly=/work/ea14/juicer/references/genome_collection/Hs2-HiC.chrom.sizes&files.file_format=bigWig&format=json&field=lab.title&field=biosample_term_name&field=assay_term_name&field=target.label&field=files.file_format&field=files.output_type&field=files.href&field=files.replicate.technical_replicate_number&field=files.replicate.biological_replicate_number&field=files.assembly&limit=all";
 
-        igvxhr
+        igv.xhr
             .loadJson(query, {})
             .then(function (json) {
 
-                var rows,
-                    obj;
-
-                console.log('then - parse/sort json ...');
+                var rows;
 
                 rows = [];
                 _.each(json["@graph"], function (record) {
@@ -82,7 +77,6 @@ var encode = (function (encode) {
                         target,
                         filtered,
                         mapped;
-
 
                     cellType = record["biosample_term_name"] || '';
 
@@ -127,65 +121,93 @@ var encode = (function (encode) {
 
                 });
 
-                rows.sort(function (a, b) {
-                    var a1 = a["Assembly"],
-                        a2 = b["Assembly"],
-                        ct1 = a["Cell Type"],
-                        ct2 = b["Cell Type"],
-                        t1 = a["Target"],
-                        t2 = b["Target"];
+                // insert placeholders for missing data
+                self.data = _.map(rows, function (row) {
+                    return _.mapObject(row, function (val) {
+                        return (undefined === val || '' === val) ? '-' : val;
+                    });
+                });
 
-                    if (a1 === a2) {
-                        if (ct1 === ct2) {
-                            if (t1 === t2) {
+                self.data.sort(function (a, b) {
+                    var aa1,
+                        aa2,
+                        cc1,
+                        cc2,
+                        tt1,
+                        tt2;
+
+                    aa1 = a['Assembly' ]; aa2 = b['Assembly' ];
+                    cc1 = a['Cell Type']; cc2 = b['Cell Type'];
+                    tt1 = a['Target'   ]; tt2 = b['Target'   ];
+
+                    if (aa1 === aa2) {
+                        if (cc1 === cc2) {
+                            if (tt1 === tt2) {
                                 return 0;
-                            }
-                            else if (t1 < t2) {
+                            } else if (tt1 < tt2) {
                                 return -1;
-                            }
-                            else {
+                            } else {
                                 return 1;
                             }
-                        }
-                        else if (ct1 < ct2) {
+                        } else if (cc1 < cc2) {
                             return -1;
-                        }
-                        else {
+                        } else {
                             return 1;
                         }
-                    }
-                    else {
-                        if (a1 < a2) {
+                    } else {
+                        if (aa1 < aa2) {
                             return -1;
-                        }
-                        else {
+                        } else {
                             return 1;
                         }
                     }
                 });
 
-                console.log('then - done');
+                continuation(true);
 
-                obj = {
-                    columns: [ 'Assembly', 'Cell Type', 'Target', 'Assay Type', 'Output Type', 'Lab' ],
-                    rows: rows
-                };
-
-                console.log('then - ingestData() ...');
-                ingestData.call(self, obj, function () {
-                    continuation();
-                });
-
-
+            })
+            .catch(function (e) {
+                continuation(false);
             });
 
     };
 
-    encode.EncodeDataSource.prototype.dataAtRowIndex = function (index) {
+    igv.EncodeDataSource.prototype.tableData = function () {
+        var self = this,
+            mapped;
+
+        mapped = _.map(this.data, function (row) {
+
+            // Isolate the subset of the data for display in the table
+            return _.values(_.pick(row, _.map(self.columnFormat, function (column) {
+                return _.first(_.keys(column));
+            })));
+        });
+
+        return mapped;
+    };
+
+    igv.EncodeDataSource.prototype.tableColumns = function () {
+
+        var columns;
+
+        columns = _.map(this.columnFormat, function (obj) {
+            var key,
+                val;
+
+            key = _.first(_.keys(obj));
+            val = _.first(_.values(obj));
+            return { title: key, width: val }
+        });
+
+        return columns;
+    };
+
+    igv.EncodeDataSource.prototype.dataAtRowIndex = function (index) {
         var row,
             obj;
 
-        row =  this.jSON.rows[ index ];
+        row =  this.data[ index ];
 
         obj =
             {
@@ -193,6 +215,8 @@ var encode = (function (encode) {
                 color: encodeAntibodyColor(row[ 'Target' ]),
                 name: row['Name']
             };
+
+        return obj;
 
         function encodeAntibodyColor (antibody) {
 
@@ -221,96 +245,8 @@ var encode = (function (encode) {
             return colors[ key ];
 
         }
-
-        return obj;
     };
 
-    encode.EncodeDataSource.prototype.tableData = function () {
-        return this.tableFormat.tableData(this.jSON);
-    };
+    return igv;
 
-    encode.EncodeDataSource.prototype.tableColumns = function () {
-        return this.tableFormat.tableColumns(this.jSON);
-    };
-
-    function ingestData(data, continuation) {
-
-        if (data instanceof File) {
-            getFile.call(this, data, continuation);
-        } else if (data instanceof Object) {
-            getJSON.call(this, data, continuation);
-        }
-
-        function getJSON(json, continuation) {
-
-            var self = this;
-
-            this.jSON = json;
-
-            json.rows.forEach(function(row, i){
-
-                Object.keys(row).forEach(function(key){
-                    var item = row[ key ];
-                    self.jSON.rows[ i ][ key ] = (undefined === item || "" === item) ? "-" : item;
-                });
-
-            });
-
-            console.log('ingestJSON - done');
-
-            continuation();
-
-        }
-
-        function getFile(file, continuation) {
-
-            var self = this;
-
-            this.jSON = {};
-            igvxhr.loadString(file).then(function (data) {
-
-                var lines = data.splitLines(),
-                    item;
-
-                // Raw data items order:
-                // path | cell | dataType | antibody | view | replicate | type | lab | hub
-                //
-                // Reorder to match desired order. Discard hub item.
-                //
-                self.jSON.columns = lines[0].split("\t");
-                self.jSON.columns.pop();
-                item = self.jSON.columns.shift();
-                self.jSON.columns.push(item);
-
-                self.jSON.rows = [];
-
-                lines.slice(1, lines.length - 1).forEach(function (line) {
-
-                    var tokens,
-                        row;
-
-                    tokens = line.split("\t");
-                    tokens.pop();
-                    item = tokens.shift();
-                    tokens.push(item);
-
-                    row = {};
-                    tokens.forEach(function (t, i, ts) {
-                        var key = self.jSON.columns[ i ];
-                        row[ key ] = (undefined === t || "" === t) ? "-" : t;
-                    });
-
-                    self.jSON.rows.push(row);
-
-                });
-
-                continuation();
-            });
-
-        }
-
-    }
-
-    return encode;
-
-})(encode || {});
+})(igv || {});

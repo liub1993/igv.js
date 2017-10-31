@@ -23,28 +23,33 @@
  * THE SOFTWARE.
  */
 
-var igvxhr = (function (igvxhr) {
+var igv = (function (igv) {
 
-    // Compression types
-    const NONE = 0;
-    const GZIP = 1;
-    const BGZF = 2;
+    var NONE = 0;
+    var GZIP = 1;
+    var BGZF = 2;
+    igv.xhr = {};
 
-    igvxhr.load = function (url, options) {
+
+    igv.xhr.load = function (url, options) {
+
+        url = mapUrl(url);
 
         if (!options) options = {};
 
         if (!options.oauthToken) {
-            return applyOauthToken();
+            return getLoadPromise(url, options);
+        } else {
+
+            var token = _.isFunction(options.oauthToken) ? options.oauthToken() : options.oauthToken;
+
+            if (token.then && _.isFunction(token.then)) {
+                return token.then(applyOauthToken);
+            }
+            else {
+                return applyOauthToken(token);
+            }
         }
-
-        var token = _.isFunction(options.oauthToken) ? options.oauthToken() : options.oauthToken;
-
-        if (token.then && _.isFunction(token.then)) {
-            return token.then(applyOauthToken);
-        }
-
-        return applyOauthToken(token);
 
         ////////////
 
@@ -86,7 +91,7 @@ var igvxhr = (function (igvxhr) {
                     headers = headers || {};
                     igv.Google.addGoogleHeaders(headers);
 
-                } else if(options.oauth) {
+                } else if (options.oauth) {
                     // "Legacy" option -- do not use (use options.token)
                     addOauthHeaders(headers)
                 }
@@ -164,7 +169,7 @@ var igvxhr = (function (igvxhr) {
                         options.sendData = "url=" + url;
                         options.crossDomainRetried = true;
 
-                        igvxhr.load(igv.browser.crossDomainProxy, options).then(fullfill);
+                        igv.xhr.load(igv.browser.crossDomainProxy, options).then(fullfill);
                     }
                     else {
                         handleError("Error accessing resource: " + url + " Status: " + xhr.status);
@@ -200,19 +205,19 @@ var igvxhr = (function (igvxhr) {
         }
     };
 
-    igvxhr.loadArrayBuffer = function (url, options) {
+    igv.xhr.loadArrayBuffer = function (url, options) {
 
         if (url instanceof File) {
             return loadFileSlice(url, options);
         } else {
             if (options === undefined) options = {};
             options.responseType = "arraybuffer";
-            return igvxhr.load(url, options);
+            return igv.xhr.load(url, options);
         }
 
     };
 
-    igvxhr.loadJson = function (url, options) {
+    igv.xhr.loadJson = function (url, options) {
 
         var method = options.method || (options.sendData ? "POST" : "GET");
 
@@ -220,7 +225,7 @@ var igvxhr = (function (igvxhr) {
 
         return new Promise(function (fullfill, reject) {
 
-            igvxhr.load(url, options).then(
+            igv.xhr.load(url, options).then(
                 function (result) {
                     if (result) {
                         fullfill(JSON.parse(result));
@@ -232,7 +237,7 @@ var igvxhr = (function (igvxhr) {
         })
     };
 
-    igvxhr.loadString = function (path, options) {
+    igv.xhr.loadString = function (path, options) {
         if (path instanceof File) {
             return loadFileHelper(path, options);
         } else {
@@ -240,7 +245,7 @@ var igvxhr = (function (igvxhr) {
         }
     };
 
-    igvxhr.arrayBufferToString = function (arraybuffer, compression) {
+    igv.xhr.arrayBufferToString = function (arraybuffer, compression) {
 
         var plain, inflate;
 
@@ -309,7 +314,7 @@ var igvxhr = (function (igvxhr) {
                     compression = NONE;
                 }
 
-                // result = igvxhr.arrayBufferToString(fileReader.result, compression);
+                // result = igv.xhr.arrayBufferToString(fileReader.result, compression);
                 // console.log('loadFileSlice byte length ' + fileReader.result.byteLength);
 
                 fullfill(fileReader.result);
@@ -352,7 +357,7 @@ var igvxhr = (function (igvxhr) {
                     compression = NONE;
                 }
 
-                result = igvxhr.arrayBufferToString(fileReader.result, compression);
+                result = igv.xhr.arrayBufferToString(fileReader.result, compression);
 
                 fullfill(result);
 
@@ -392,17 +397,17 @@ var igvxhr = (function (igvxhr) {
 
         if (compression === NONE) {
             options.mimeType = 'text/plain; charset=x-user-defined';
-            return igvxhr.load(url, options);
+            return igv.xhr.load(url, options);
         } else {
             options.responseType = "arraybuffer";
 
             return new Promise(function (fullfill, reject) {
 
-                igvxhr
+                igv.xhr
                     .load(url, options)
                     .then(
                         function (data) {
-                            var result = igvxhr.arrayBufferToString(data, compression);
+                            var result = igv.xhr.arrayBufferToString(data, compression);
                             fullfill(result);
                         })
                     .catch(reject)
@@ -442,19 +447,35 @@ var igvxhr = (function (igvxhr) {
         }
     }
 
-    // Increments an anonymous usage count.  Count is anonymous, needed for our continued funding.  Please don't delete
+    /**
+     * Perform some well-known url mappings.  For now just handles dropbox urls
+     * @param url
+     */
+    function mapUrl(url) {
+
+        if (url.includes("//www.dropbox.com")) {
+            return url.replace("//www.dropbox.com", "//dl.dropboxusercontent.com");
+        }
+        else if (url.includes("//drive.google.com")) {
+            return igv.Google.driveDownloadURL(url);
+        }
+        else {
+            return url;
+        }
+    }
+
+// Increments an anonymous usage count.  Count is anonymous, needed for our continued funding.  Please don't delete
     const href = window.document.location.href;
     if (!(href.includes("localhost") || href.includes("127.0.0.1"))) {
         var url = "https://data.broadinstitute.org/igv/projects/current/counter_igvjs.php?version=" + "0";
-        igvxhr.load(url).then(function (ignore) {
+        igv.xhr.load(url).then(function (ignore) {
             console.log(ignore);
         }).catch(function (error) {
             console.log(error);
         });
     }
 
-    return igvxhr;
 
+    return igv;
 })
-(igvxhr || {});
-
+(igv || {});

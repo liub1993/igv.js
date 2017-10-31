@@ -37,7 +37,7 @@ var igv = (function (igv) {
 
         return new Promise(function (fullfill) {
 
-            igvxhr
+            igv.xhr
                 .loadArrayBuffer(indexFile, igv.buildOptions(config))
                 .then(function (arrayBuffer) {
 
@@ -80,7 +80,7 @@ var igv = (function (igv) {
 
                 var indexedFileTS = parser.getLong();
                 var indexedFileMD5 = parser.getString();
-                flags = parser.getInt();
+                var flags = parser.getInt();
                 if (version < 3 && (flags & SEQUENCE_DICTIONARY_FLAG) == SEQUENCE_DICTIONARY_FLAG) {
                     // readSequenceDictionary(dis);
                 }

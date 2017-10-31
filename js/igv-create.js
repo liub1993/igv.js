@@ -49,6 +49,7 @@ var igv = (function (igv) {
 
         setDefaults(config);
 
+
         // Set track order explicitly. Otherwise they will be ordered randomly as each completes its async load
         setTrackOrder(config);
 
@@ -98,30 +99,43 @@ var igv = (function (igv) {
             $header.append($('<div class="igv-logo-nonav">'));
         }
 
-
-        setOAuth(config);
+        if (config.apiKey) igv.setApiKey(config.apiKey);
+        if (config.oauthToken) igv.setOauthToken(config.oauthToken);
 
         // Deal with legacy genome definition options
         setReferenceConfiguration(config);
 
-        igv.loadGenome(config.reference).then(function (genome) {
 
-            var width;
+        // Potentially load a session file
+        var width;
+        loadSessionFile(config)
 
-            igv.browser.genome = genome;
-            igv.browser.genome.id = config.reference.genomeId;
+            .then(function (ignore) {
+                return igv.loadGenome(config.reference);
+            })
 
-            width = igv.browser.viewportContainerWidth();
-            igv.browser.getGenomicStateList(lociWithConfiguration(config), width, function (genomicStateList) {
+            .then(function (genome) {
 
-                var errorString,
-                    gs;
 
-                if (_.size(genomicStateList) > 0) {
+                igv.browser.genome = genome;
+                igv.browser.genome.id = config.reference.genomeId;
 
-                    igv.browser.genomicStateList = _.map(genomicStateList, function (genomicState, index) {
+                igv.browser.chromosomeSelectWidget.update(igv.browser.genome);
+
+                width = igv.browser.viewportContainerWidth();
+
+                return igv.browser.getGenomicStateList(lociWithConfiguration(config), width)
+            })
+
+            .then(function (genomicStateList) {
+
+                var errorString;
+
+                if (genomicStateList.length > 0) {
+
+                    igv.browser.genomicStateList = genomicStateList.map(function (genomicState, index) {
                         genomicState.locusIndex = index;
-                        genomicState.locusCount = _.size(genomicStateList);
+                        genomicState.locusCount = genomicStateList.length;
                         genomicState.referenceFrame = new igv.ReferenceFrame(genomicState.chromosome.name, genomicState.start, (genomicState.end - genomicState.start) / (width / genomicState.locusCount));
                         genomicState.initialReferenceFrame = new igv.ReferenceFrame(genomicState.chromosome.name, genomicState.start, (genomicState.end - genomicState.start) / (width / genomicState.locusCount));
                         return genomicState;
@@ -129,11 +143,7 @@ var igv = (function (igv) {
 
                     igv.browser.updateLocusSearchWithGenomicState(_.first(igv.browser.genomicStateList));
 
-                    if (1 === _.size(igv.browser.genomicStateList) && 'all' === (_.first(igv.browser.genomicStateList)).locusSearchString) {
-                        igv.browser.disableZoomWidget();
-                    } else {
-                        igv.browser.enableZoomWidget(igv.browser.zoomHandlers);
-                    }
+                    igv.browser.zoomWidgetLayout();
 
                     // igv.browser.toggleCursorGuide(igv.browser.genomicStateList);
                     igv.browser.toggleCenterGuide(igv.browser.genomicStateList);
@@ -152,54 +162,40 @@ var igv = (function (igv) {
                         igv.browser.addTrack(igv.browser.rulerTrack);
                     }
 
-                    if (config.tracks) {
-                        igv.browser.loadTracksWithConfigList(config.tracks);
-
-                        igv.browser.windowSizePanel.updateWithGenomicState(_.first(igv.browser.genomicStateList));
+                    if (config.roi) {
+                        igv.browser.roi = [];
+                        config.roi.forEach(function (r) {
+                            igv.browser.roi.push(new igv.ROI(r));
+                        });
                     }
 
+                    if (config.tracks) {
+                        igv.browser.loadTracksWithConfigList(config.tracks);
+                    }
+
+                    igv.browser.windowSizePanel.updateWithGenomicState(_.first(igv.browser.genomicStateList));
+
                 } else {
-                    errorString = 'Unrecognized locus ' + lociWithConfiguration(config);
+                    errorString = 'Unrecognized locus ' + configuration.locus;
                     igv.presentAlert(errorString);
                 }
 
+            })
+            .catch(function (error) {
+                igv.presentAlert(error);
+                console.log(error);
             });
-
-            function lociWithConfiguration(configuration) {
-
-                var loci = [];
-
-                if (configuration.locus) {
-
-                    if (Array.isArray(configuration.locus)) {
-                        _.each(configuration.locus, function (l) {
-                            loci.push(l);
-                        });
-
-                    } else {
-                        loci.push(configuration.locus);
-                    }
-                }
-
-                if (0 === _.size(loci)) {
-                    loci.push(_.first(igv.browser.genome.chromosomeNames));
-                }
-
-                return loci;
-            }
-
-        }).catch(function (error) {
-            igv.presentAlert(error);
-            console.log(error);
-        });
 
         return browser;
 
     };
 
-    function setOAuth(conf) {
-        oauth.google.apiKey = conf.apiKey;
-        oauth.google.access_token = conf.oauthToken;
+    igv.setApiKey = function (key) {
+        oauth.google.apiKey = key;
+    }
+
+    igv.setOauthToken = function (token) {
+        oauth.google.access_token = token;
     }
 
     function setTrackOrder(conf) {
@@ -320,57 +316,47 @@ var igv = (function (igv) {
                 browser.trackFileLoad.$presentationButton.hide();
             }
 
+            // chromosome select widget
+            browser.chromosomeSelectWidget = new igv.ChromosomeSelectWidget(browser, $navigation);
+            if (true === config.showChromosomeWidget) {
+                browser.chromosomeSelectWidget.$container.show();
+            } else {
+                browser.chromosomeSelectWidget.$container.hide();
+            }
+
             // search container
             $searchContainer = $('<div class="igv-search-container">');
+            $navigation.append($searchContainer);
 
             browser.$searchInput = $('<input type="text" placeholder="Locus Search">');
+            $searchContainer.append(browser.$searchInput);
 
             browser.$searchInput.change(function (e) {
-                browser.parseSearchInput($(e.target).val());
+                browser.parseSearchInput($(this).val());
             });
 
             $faSearch = $('<i class="fa fa-search">');
+            $searchContainer.append($faSearch);
 
             $faSearch.click(function () {
                 browser.parseSearchInput(browser.$searchInput.val());
             });
 
-            $searchContainer.append(browser.$searchInput);
-            $searchContainer.append($faSearch);
 
             // search results presented in table
             browser.$searchResults = $('<div class="igv-search-results">');
-            browser.$searchResultsTable = $('<table>');
-
-            browser.$searchResults.append(browser.$searchResultsTable.get(0));
-
             $searchContainer.append(browser.$searchResults.get(0));
 
+            browser.$searchResultsTable = $('<table>');
+            browser.$searchResults.append(browser.$searchResultsTable.get(0));
+
             browser.$searchResults.hide();
-
-            $navigation.append($searchContainer);
-
 
             // window size panel
             browser.windowSizePanel = new igv.WindowSizePanel($navigation);
 
-            // zoom
-            browser.zoomHandlers = {
-                in: {
-                    click: function (e) {
-                        browser.zoomIn();
-                    }
-                },
-                out: {
-                    click: function (e) {
-                        browser.zoomOut();
-                    }
-                }
-            };
-
-            browser.$zoomContainer = zoomWidget();
-            $navigation.append(browser.$zoomContainer);
-
+            // zoom widget
+            zoomWidget(browser, $navigation);
 
             // cursor tracking guide
             browser.$cursorTrackingGuide = $('<div class="igv-cursor-tracking-guide">');
@@ -419,13 +405,26 @@ var igv = (function (igv) {
         return $controls.get(0);
     }
 
-    function zoomWidget() {
+    function zoomWidget(browser, $parent) {
 
-        var $zoomContainer = $('<div class="igv-zoom-widget">');
-        $zoomContainer.append($('<i class="fa fa-minus-circle">'));
-        $zoomContainer.append($('<i class="fa fa-plus-circle">'));
+        var $fa;
 
-        return $zoomContainer;
+        browser.$zoomContainer = $('<div class="igv-zoom-widget">');
+        $parent.append(browser.$zoomContainer);
+
+        $fa = $('<i class="fa fa-minus-circle">');
+        browser.$zoomContainer.append($fa);
+        $fa.on('click', function () {
+            browser.zoomOut();
+        });
+
+
+        $fa = $('<i class="fa fa-plus-circle">');
+        browser.$zoomContainer.append($fa);
+        $fa.on('click', function () {
+            browser.zoomIn();
+        });
+
     }
 
     function setDefaults(config) {
@@ -500,6 +499,87 @@ var igv = (function (igv) {
         $(".igv-grid-container-colorpicker").remove();
         $(".igv-grid-container-dialog").remove();
         // $(".igv-grid-container-dialog").remove();
+    }
+
+
+    function lociWithConfiguration(configuration) {
+
+        var loci = [];
+
+        if (configuration.locus) {
+
+            if (Array.isArray(configuration.locus)) {
+                loci = configuration.locus;
+
+            } else {
+                loci.push(configuration.locus);
+            }
+        }
+        else {
+            if(igv.browser.genome.hasOwnProperty("all")) {
+                loci.push("all");
+            }
+            else {
+                loci.push(igv.browser.genome.chromosomeNames[0]);
+            }
+        }
+
+        return loci;
+    }
+
+
+    function extractQuery(uri) {
+        var i1, i2, i, j, s, query, tokens;
+
+        query = {};
+        i1 = uri.indexOf("?");
+        i2 = uri.lastIndexOf("#");
+
+        if (i1 >= 0) {
+            if (i2 < 0) i2 = uri.length;
+
+            for (i = i1 + 1; i < i2;) {
+
+                j = uri.indexOf("&", i);
+                if (j < 0) j = i2;
+
+                s = uri.substring(i, j);
+                tokens = s.split("=", 2);
+                if (tokens.length === 2) {
+                    query[tokens[0]] = tokens[1];
+                }
+
+                i = j + 1;
+            }
+        }
+        return query;
+    }
+
+    function loadSessionFile(config) {
+
+
+        var query = extractQuery(window.location.href);
+        if (query.hasOwnProperty("igvSessionXML")) {
+
+            var igvSession = decodeURIComponent(query["igvSessionXML"]);
+
+            return igv.xhr.loadString(igvSession)
+
+                .then(function (string) {
+
+                    var session = new igv.XMLSession(string);
+
+                    config.tracks = session.tracks;    // TODO -- replace or append?
+
+                    return config;
+
+                })
+
+        }
+        else {
+            return Promise.resolve(config);
+        }
+
     }
 
 

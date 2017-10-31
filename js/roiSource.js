@@ -23,22 +23,40 @@
  * THE SOFTWARE.
  */
 
-/**
- * Support for module definition.  This code should be last in the concatenated "igv.js" file.
- *
- */
+var igv = (function (igv) {
 
-(function (factory) {
-    if ( typeof define === 'function' && define.amd ) {
-        // AMD. Register as an anonymous module.
-        define(['jquery'], factory);
-    } else if (typeof exports === 'object') {
-        // Node/CommonJS style for Browserify
-        module.exports = factory;
-    }
-}(function (ignored) {
-    if(igv === undefined)  igv = {};  // Define global igv object
+    /**
+     * feature source for "bed like" files (tab delimited files with 1 feature per line: bed, gff, vcf, etc)
+     *
+     * @param config
+     * @constructor
+     */
+    igv.ROISource = function (config) {
+        this.config = config || {};
+        this.sourceType = (config.sourceType === undefined ? "file" : config.sourceType);
+        this.reader = new igv.FeatureFileReader(config);
+        this.visibilityWindow = config.visibilityWindow;
+    };
+
+    igv.ROISource.prototype.getRegions = function (chr, bpStart, bpEnd) {
+
+        var self = this;
+        return new Promise(function (fulfill, reject) {
+
+            var genomicInterval;
+
+            genomicInterval = new igv.GenomicInterval(chr, bpStart, bpEnd);
+
+            self.reader
+                .readFeatures(chr, genomicInterval.start, genomicInterval.end)
+                .then(function (features) {
+                    fulfill(features)
+                })
+                .catch(reject);
+        });
+    };
+
+
     return igv;
-}));
-
-
+})
+(igv || {});

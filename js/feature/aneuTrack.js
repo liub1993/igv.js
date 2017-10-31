@@ -86,19 +86,21 @@ var igv = (function (igv) {
     };
 
     igv.AneuTrack.prototype.getSummary = function (chr, bpStart, bpEnd, continuation) {
-        var me = this;
-        var filtersummary = function (redlinedata) {
-            var summarydata = [];
-            //log("AneuTrack: getSummary for: " + JSON.stringify(me.featureSourceRed.url));
-            for (i = 0, len = redlinedata.length; i < len; i++) {
-                var feature = redlinedata[i];
-                if (Math.abs(feature.score - 2) > 0.5 && (feature.end - feature.start > 5000000)) {
-                    //log("adding summary: "+JSON.stringify(feature));
-                    summarydata.push(feature);
+       
+            filtersummary = function (redlinedata) {
+                var summarydata = [],
+                    i,
+                    len;
+
+                for (i = 0, len = redlinedata.length; i < len; i++) {
+                    var feature = redlinedata[i];
+                    if (Math.abs(feature.score - 2) > 0.5 && (feature.end - feature.start > 5000000)) {
+                        //log("adding summary: "+JSON.stringify(feature));
+                        summarydata.push(feature);
+                    }
                 }
-            }
-            continuation(summarydata);
-        };
+                continuation(summarydata);
+            };
         if (this.featureSourceRed) {
             this.featureSourceRed.getFeatures(chr, bpStart, bpEnd, filtersummary);
         }
@@ -109,7 +111,8 @@ var igv = (function (igv) {
     };
 
     igv.AneuTrack.prototype.loadSummary = function (chr, bpStart, bpEnd, continuation) {
-        var self = this;
+        var self = this,
+            afterload;
         if (this.featureSourceRed) {
             this.featureSourceRed.getFeatures(chr, bpStart, bpEnd, continuation);
         }
@@ -129,7 +132,7 @@ var igv = (function (igv) {
 
             afterload = igv.buildOptions(self.config, {tokens: self.config.tokens, success: afterJsonLoaded});
 
-            igvxhr.loadString(self.config.url, afterload);
+            igv.xhr.loadString(self.config.url, afterload);
 
             return null;
         }
@@ -175,21 +178,23 @@ var igv = (function (igv) {
                 afterJsonLoaded = function (json) {
                     json = JSON.parse(json);
                     log("Got json: " + json + ", diff :" + json.diff);
-                    self.featureSource = new igv.AneuFeatureSource(config, json.diff);
-                    self.featureSourceRed = new igv.AneuFeatureSource(config, json.redline);
+                    self.featureSource = new igv.AneuFeatureSource(self.config, json.diff);
+                    self.featureSourceRed = new igv.AneuFeatureSource(self.config, json.redline);
                     fulfill();
                 };
 
                 afterload = igv.buildOptions(self.config, {tokens: self.config.tokens});
 
-                igvxhr.loadString(self.config.url, afterload).then(afterJsonLoaded);
+                igv.xhr.loadString(self.config.url, afterload).then(afterJsonLoaded);
 
             }
         });
     }
 
     igv.AneuTrack.prototype.getColor = function (value) {
-        var expected = 2;
+        var expected = 2,
+            color;
+
         if (value < expected) {
             color = this.lowColor;
         } else if (value > expected) {
@@ -429,6 +434,9 @@ var igv = (function (igv) {
      */
     igv.AneuTrack.prototype.computePixelHeight = function (features) {
         // console.log("computePixelHeight");
+
+        var i, len, sample;
+
         for (i = 0, len = features.length; i < len; i++) {
             sample = features[i].sample;
             if (this.samples && !this.samples.hasOwnProperty(sample)) {
@@ -495,7 +503,6 @@ var igv = (function (igv) {
                 self.samples[sampleNames[i]] = i;
             }
             self.sampleNames = sampleNames;
-
 
 
             callback();

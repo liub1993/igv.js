@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2016-2017 The Regents of the University of California
+ * Copyright (c) 2016-2017 The Regents of the University of California 
  * Author: Jim Robinson
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -23,58 +23,44 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+var igv = (function (igv) {
 
-var encode = (function (encode) {
+    igv.ChromosomeSelectWidget = function (browser, $parent) {
 
-    /**
-     * @param config tableFormat configuration
-     */
-    encode.EncodeTableFormat = function (config) {
-        this.config = config;
-    };
+        this.$container = $('<div>', { 'class': 'igv-chromosome-select-widget-container' });
+        $parent.append(this.$container);
 
-    /**
-     * @param jSON data object passed from EncodeDataSource instance
-     */
-    encode.EncodeTableFormat.prototype.tableData = function (jSON) {
+        this.$select = $('<select>', { 'name': 'chromosome-select-widget' });
+        this.$container.append(this.$select);
 
-        var result;
-
-        result = _.map(jSON.rows, function (row, index) {
-
-            var rr;
-
-            rr = _.map(jSON.columns, function (key) {
-                return row[ key ];
-            });
-
-            // rr.unshift(index);
-
-            return rr;
-
+        this.$select.on('change', function () {
+            browser.parseSearchInput( $(this).val() );
         });
 
-        return result;
     };
 
-    /**
-     * @param jSON data object passed from EncodeDataSource instance
-     */
-    encode.EncodeTableFormat.prototype.tableColumns = function (jSON) {
-
+    igv.ChromosomeSelectWidget.prototype.update = function (genome) {
         var self = this,
-            columns;
+            list;
 
-        columns = _.map(jSON.columns, function (heading) {
-            return { title:heading, width:self.config.columnWidths[ heading ] }
+        this.$select.empty();
+
+        list = genome.chromosomeNames.slice();
+        list.unshift('all');
+        _.each(list, function (name) {
+            var $o;
+
+            $o = $('<option>', { 'value':name });
+            self.$select.append($o);
+
+            // $o.prop('selected', (1 === r));
+
+            $o.text(name);
         });
-
-        // columns.unshift({ title:'index', width:'10%' });
-
-        return columns;
 
     };
 
-    return encode;
+    return igv;
 
-})(encode || {});
+})(igv || {});
+

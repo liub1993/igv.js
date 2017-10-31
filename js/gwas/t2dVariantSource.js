@@ -92,7 +92,7 @@ var igv = (function (igv) {
                     queryURL = self.config.proxy ? self.config.proxy : self.url,
                     body = self.queryJson(queryChr, queryStart, queryEnd, self.config);
 
-                igvxhr.loadJson(queryURL, {
+                igv.xhr.loadJson(queryURL, {
                     sendData: body,
                     withCredentials: self.config.withCredentials
 
@@ -178,7 +178,8 @@ var igv = (function (igv) {
      */
     function jsonToVariantsV2(json, config) {
 
-        variants = [];
+        var variants = [];
+        
         json.variants.forEach(function (record) {
 
             var variant = {};
